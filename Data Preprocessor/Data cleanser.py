@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from datetime import datetime
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
 
 def preprocess_data(file_path, features_to_keep=None):
     """
@@ -215,6 +216,118 @@ def apply_custom_encoding(df, encoding_methods):
     print(f"Data shape after encoding: {encoded_df.shape}")
     return encoded_df
 
+def get_normalization_methods(encoded_df):
+    """
+    Ask user to select normalization method for each numeric feature
+    
+    Parameters:
+    encoded_df (pd.DataFrame): Dataframe with encoded features
+    
+    Returns:
+    dict: Dictionary mapping feature names to normalization methods
+    """
+    normalization_methods = {}
+    
+    # Get numeric features only (excluding binary/categorical)
+    numeric_features = encoded_df.select_dtypes(include=[np.number]).columns.tolist()
+    
+    # Remove binary features (0/1 values)
+    binary_features = []
+    for feature in numeric_features:
+        unique_vals = encoded_df[feature].unique()
+        if set(unique_vals).issubset({0, 1}) and len(unique_vals) <= 2:
+            binary_features.append(feature)
+    
+    numeric_features = [f for f in numeric_features if f not in binary_features]
+    
+    if not numeric_features:
+        print("No numeric features available for normalization.")
+        return normalization_methods
+    
+    print("\nAvailable normalization methods:")
+    print("1. No normalization")
+    print("2. Standard scaling (mean=0, std=1)")
+    print("3. Min-Max scaling (range 0-1)")
+    print("4. Robust scaling (resistant to outliers)")
+    
+    # Mapping from input to method name
+    method_map = {
+        '1': 'none',
+        '2': 'standard',
+        '3': 'minmax',
+        '4': 'robust'
+    }
+    
+    print(f"\nNumeric features available for normalization:")
+    for i, feature in enumerate(numeric_features, 1):
+        print(f"{i}. {feature} (range: {encoded_df[feature].min():.2f} to {encoded_df[feature].max():.2f})")
+    
+    for feature in numeric_features:
+        print(f"\nFeature: {feature}")
+        print(f"Current range: {encoded_df[feature].min():.2f} to {encoded_df[feature].max():.2f}")
+        print(f"Mean: {encoded_df[feature].mean():.2f}, Std: {encoded_df[feature].std():.2f}")
+        
+        try:
+            method_input = input("Select normalization method (1-4): ").strip()
+            normalization_methods[feature] = method_map.get(method_input, 'none')
+        except:
+            print("Invalid input. Using 'no normalization' as default.")
+            normalization_methods[feature] = 'none'
+    
+    return normalization_methods
+
+def apply_normalization(encoded_df, normalization_methods):
+    """
+    Apply normalization methods to each feature based on user selection
+    
+    Parameters:
+    encoded_df (pd.DataFrame): Dataframe with encoded features
+    normalization_methods (dict): Dictionary mapping feature names to normalization methods
+    
+    Returns:
+    pd.DataFrame: Dataframe with normalized features
+    """
+    print("\nApplying normalization to features...")
+    
+    # Make a copy of the dataframe to avoid modifying the original
+    normalized_df = encoded_df.copy()
+    
+    # Initialize scalers
+    standard_scaler = StandardScaler()
+    minmax_scaler = MinMaxScaler()
+    robust_scaler = RobustScaler()
+    
+    # Track which features were normalized
+    normalized_features = []
+    
+    for feature, method in normalization_methods.items():
+        if feature not in normalized_df.columns:
+            continue
+            
+        print(f"Processing {feature} with {method} normalization")
+        
+        if method == 'none':
+            continue  # No normalization needed
+            
+        elif method == 'standard':
+            normalized_df[feature] = standard_scaler.fit_transform(normalized_df[[feature]])
+            normalized_features.append(feature)
+            
+        elif method == 'minmax':
+            normalized_df[feature] = minmax_scaler.fit_transform(normalized_df[[feature]])
+            normalized_features.append(feature)
+            
+        elif method == 'robust':
+            normalized_df[feature] = robust_scaler.fit_transform(normalized_df[[feature]])
+            normalized_features.append(feature)
+    
+    if normalized_features:
+        print(f"\nNormalized features: {normalized_features}")
+        for feature in normalized_features:
+            print(f"{feature}: range {normalized_df[feature].min():.2f} to {normalized_df[feature].max():.2f}")
+    
+    return normalized_df
+
 def get_feature_selection():
     """
     Interactive function to get feature selection from user
@@ -326,23 +439,40 @@ if __name__ == "__main__":
     encoded_df = apply_custom_encoding(processed_df, encoding_methods)
     
     # Display the encoded dataframe info
-    print("\nFinal encoded data info:")
+    print("\nData after encoding:")
     print(encoded_df.info())
+    
+    # Display sample of encoded data (before normalization)
+    print("\nSample of encoded data (before normalization):")
+    print(encoded_df.head())
+    
+    # Get normalization methods from user for each numeric feature
+    normalization_methods = get_normalization_methods(encoded_df)
+    
+    # Apply normalization based on user selection
+    if normalization_methods:
+        final_df = apply_normalization(encoded_df, normalization_methods)
+    else:
+        final_df = encoded_df
+    
+    # Display the final dataframe info
+    print("\nFinal data info after all processing:")
+    print(final_df.info())
     
     # Save the processed data
     output_filename = 'Fully_Preprocessed_Data.csv'
-    encoded_df.to_csv(output_filename, index=False)
+    final_df.to_csv(output_filename, index=False)
     print(f"\nPreprocessed and encoded data saved as '{output_filename}'")
     
     # Display basic info about the processed data
-    print("\nSample of processed and encoded data:")
-    print(encoded_df.head())
+    print("\nSample of final processed data:")
+    print(final_df.head())
     
     # Show comparison between raw and processed data
     print("="*60)
     print("PROCESSING SUMMARY")
     print("="*60)
     print(f"Original data shape: {raw_df.shape}")
-    print(f"Final processed data shape: {encoded_df.shape}")
-    print(f"Number of features reduced by: {raw_df.shape[1] - encoded_df.shape[1]}")
+    print(f"Final processed data shape: {final_df.shape}")
+    print(f"Number of features reduced by: {raw_df.shape[1] - final_df.shape[1]}")
     print("="*60)
