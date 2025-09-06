@@ -145,14 +145,21 @@ def apply_custom_encoding(df, encoding_methods):
     # Track which features to drop
     features_to_drop = []
     
+    # Track one-hot encoded features to exclude from normalization
+    onehot_features = []
+    
     # Define encoding functions
     def apply_onehot_encoding(feature):
         if encoded_df[feature].dtype.name == 'category' or encoded_df[feature].dtype == 'object':
-            dummies = pd.get_dummies(encoded_df[feature], prefix=feature)
-            return pd.concat([encoded_df, dummies], axis=1), True
+            dummies = pd.get_dummies(encoded_df[feature], prefix=feature, dtype=np.uint8)  # Ensure 0/1 output
+            # Add the one-hot encoded columns to the dataframe
+            for col in dummies.columns:
+                encoded_df[col] = dummies[col]
+                onehot_features.append(col)  # Track one-hot encoded columns
+            return True
         else:
             print(f"Warning: {feature} is not categorical. Skipping one-hot encoding.")
-            return encoded_df, False
+            return False
     
     def apply_frequency_encoding(feature):
         if encoded_df[feature].dtype.name == 'category' or encoded_df[feature].dtype == 'object':
@@ -192,7 +199,7 @@ def apply_custom_encoding(df, encoding_methods):
     # Use a switch-case pattern with dictionary mapping
     encoding_switcher = {
         'keep': lambda feature: None,  # No action needed
-        'onehot': lambda feature: features_to_drop.append(feature) if apply_onehot_encoding(feature)[1] else None,
+        'onehot': lambda feature: features_to_drop.append(feature) if apply_onehot_encoding(feature) else None,
         'frequency': lambda feature: features_to_drop.append(feature) if apply_frequency_encoding(feature) else None,
         'label': lambda feature: features_to_drop.append(feature) if apply_label_encoding(feature) else None,
         'ordinal': lambda feature: features_to_drop.append(feature) if apply_ordinal_encoding(feature) else None,
@@ -214,6 +221,10 @@ def apply_custom_encoding(df, encoding_methods):
         encoded_df.drop(features_to_drop, axis=1, inplace=True)
     
     print(f"Data shape after encoding: {encoded_df.shape}")
+    
+    # Store one-hot features as an attribute for later reference
+    encoded_df.onehot_features = onehot_features
+    
     return encoded_df
 
 def get_normalization_methods(encoded_df):
@@ -231,14 +242,18 @@ def get_normalization_methods(encoded_df):
     # Get numeric features only (excluding binary/categorical)
     numeric_features = encoded_df.select_dtypes(include=[np.number]).columns.tolist()
     
-    # Remove binary features (0/1 values)
+    # Remove binary features (0/1 values) and one-hot encoded features
     binary_features = []
     for feature in numeric_features:
         unique_vals = encoded_df[feature].unique()
         if set(unique_vals).issubset({0, 1}) and len(unique_vals) <= 2:
             binary_features.append(feature)
     
-    numeric_features = [f for f in numeric_features if f not in binary_features]
+    # Also exclude one-hot encoded features from normalization
+    onehot_features = getattr(encoded_df, 'onehot_features', [])
+    
+    numeric_features = [f for f in numeric_features 
+                       if f not in binary_features and f not in onehot_features]
     
     if not numeric_features:
         print("No numeric features available for normalization.")
